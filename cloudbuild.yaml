@@ -17,7 +17,7 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA'
       - '--region'
-      - 'asia-northeast3' # e.g., us-central1
+      - 'us-central1' # e.g., us-central1
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
