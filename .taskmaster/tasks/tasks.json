@@ -1,0 +1,155 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Setup Project Structure with FastAPI and MongoDB",
+        "description": "Initialize the project with FastAPI framework and set up MongoDB connection",
+        "details": "1. Create a new Python project with virtual environment\n2. Install required packages: fastapi, uvicorn, motor (MongoDB async driver), pydantic, python-jose (for JWT), passlib (for password hashing)\n3. Set up project structure with directories for routes, models, services, and utils\n4. Configure MongoDB connection using motor\n5. Create basic app.py with FastAPI instance\n6. Implement health check endpoint\n7. Set up environment variables for configuration\n\nExample code for MongoDB connection:\n```python\nfrom motor.motor_asyncio import AsyncIOMotorClient\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n@app.on_event(\"startup\")\nasync def startup_db_client():\n    app.mongodb_client = AsyncIOMotorClient(os.environ[\"MONGODB_URL\"])\n    app.mongodb = app.mongodb_client[\"playfriends_db\"]\n\n@app.on_event(\"shutdown\")\nasync def shutdown_db_client():\n    app.mongodb_client.close()\n\n@app.get(\"/health\")\nasync def health():\n    return {\"status\": \"healthy\"}\n```",
+        "testStrategy": "1. Test MongoDB connection by writing a simple script that connects and performs a basic operation\n2. Test health check endpoint using pytest with FastAPI TestClient\n3. Verify environment variables are properly loaded\n4. Ensure project structure follows best practices",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Implement User Model and Authentication",
+        "description": "Create user data model and implement authentication functionality including registration, login, and JWT token generation",
+        "details": "1. Define User model with Pydantic\n2. Create MongoDB schema for users collection\n3. Implement user registration endpoint\n4. Implement password hashing using passlib\n5. Implement login endpoint with JWT token generation\n6. Create authentication middleware for protected routes\n\nUser model example:\n```python\nfrom pydantic import BaseModel, Field, EmailStr\nfrom typing import Optional, List\nfrom bson import ObjectId\n\nclass PyObjectId(ObjectId):\n    @classmethod\n    def __get_validators__(cls):\n        yield cls.validate\n\n    @classmethod\n    def validate(cls, v):\n        if not ObjectId.is_valid(v):\n            raise ValueError(\"Invalid objectid\")\n        return ObjectId(v)\n\nclass UserModel(BaseModel):\n    id: PyObjectId = Field(default_factory=PyObjectId, alias=\"_id\")\n    username: str\n    email: EmailStr\n    hashed_password: str\n    preferences: dict = Field(default_factory=dict)\n\n    class Config:\n        allow_population_by_field_name = True\n        arbitrary_types_allowed = True\n        json_encoders = {ObjectId: str}\n```\n\nJWT token generation:\n```python\nfrom datetime import datetime, timedelta\nfrom jose import jwt\n\ndef create_access_token(data: dict, expires_delta: timedelta):\n    to_encode = data.copy()\n    expire = datetime.utcnow() + expires_delta\n    to_encode.update({\"exp\": expire})\n    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)\n    return encoded_jwt\n```",
+        "testStrategy": "1. Unit tests for user model validation\n2. Test user registration with valid and invalid data\n3. Test login with correct and incorrect credentials\n4. Test JWT token generation and validation\n5. Test authentication middleware with valid and invalid tokens",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Implement Room Model and Basic Operations",
+        "description": "Create room data model and implement basic CRUD operations for rooms",
+        "details": "1. Define Room model with Pydantic\n2. Create MongoDB schema for rooms collection\n3. Implement endpoints for creating, retrieving, updating, and deleting rooms\n4. Implement room code generation for easy joining\n5. Add relationship between users and rooms\n\nRoom model example:\n```python\nclass RoomModel(BaseModel):\n    id: PyObjectId = Field(default_factory=PyObjectId, alias=\"_id\")\n    name: str\n    code: str = Field(..., min_length=6, max_length=6)\n    creator_id: PyObjectId\n    members: List[PyObjectId] = Field(default_factory=list)\n    created_at: datetime = Field(default_factory=datetime.utcnow)\n    updated_at: datetime = Field(default_factory=datetime.utcnow)\n\n    class Config:\n        allow_population_by_field_name = True\n        arbitrary_types_allowed = True\n        json_encoders = {ObjectId: str, datetime: lambda dt: dt.isoformat()}\n```\n\nRoom code generation:\n```python\nimport random\nimport string\n\ndef generate_room_code():\n    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))\n```",
+        "testStrategy": "1. Unit tests for room model validation\n2. Test room creation with valid and invalid data\n3. Test room retrieval by ID and code\n4. Test room update and deletion\n5. Test room code generation uniqueness\n6. Test relationship between users and rooms",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Implement Room Joining and Member Management",
+        "description": "Create functionality for users to join rooms and manage room membership",
+        "details": "1. Implement endpoint for joining a room using room code\n2. Add validation to prevent duplicate members\n3. Implement endpoint for leaving a room\n4. Add functionality for room creator to remove members\n5. Implement endpoint to list all rooms a user is a member of\n\nJoin room endpoint example:\n```python\n@router.post(\"/rooms/join\")\nasync def join_room(room_code: str, current_user: UserModel = Depends(get_current_user)):\n    room = await app.mongodb.rooms.find_one({\"code\": room_code})\n    if not room:\n        raise HTTPException(status_code=404, detail=\"Room not found\")\n    \n    # Convert to Room model\n    room_model = RoomModel(**room)\n    \n    # Check if user is already a member\n    if current_user.id in room_model.members:\n        return {\"message\": \"Already a member of this room\"}\n    \n    # Add user to room members\n    result = await app.mongodb.rooms.update_one(\n        {\"_id\": room_model.id},\n        {\"$push\": {\"members\": current_user.id}}\n    )\n    \n    if result.modified_count == 1:\n        return {\"message\": \"Successfully joined room\"}\n    else:\n        raise HTTPException(status_code=400, detail=\"Failed to join room\")\n```",
+        "testStrategy": "1. Test joining a room with valid and invalid room codes\n2. Test prevention of duplicate memberships\n3. Test leaving a room\n4. Test member removal by room creator\n5. Test listing rooms a user is a member of\n6. Test error handling for non-existent rooms",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Implement User Preferences Management",
+        "description": "Create functionality for users to set and update their preferences for activities and food",
+        "details": "1. Define preference categories (food, activities, etc.)\n2. Implement endpoints for setting and updating user preferences\n3. Store preference data in user document\n4. Add rating system for preferences (1-5 scale)\n5. Implement endpoint to retrieve user preferences\n\nPreference model example:\n```python\nfrom enum import Enum\nfrom typing import Dict, Optional\n\nclass PreferenceCategory(str, Enum):\n    FOOD = \"food\"\n    CAFE = \"cafe\"\n    BOARD_GAME = \"board_game\"\n    MOVIE = \"movie\"\n    OTHER = \"other\"\n\nclass PreferenceModel(BaseModel):\n    category: PreferenceCategory\n    item: str\n    rating: int = Field(..., ge=1, le=5)\n    notes: Optional[str] = None\n\n@router.post(\"/users/preferences\")\nasync def update_preference(\n    preference: PreferenceModel,\n    current_user: UserModel = Depends(get_current_user)\n):\n    # Update or add preference\n    result = await app.mongodb.users.update_one(\n        {\"_id\": current_user.id},\n        {\"$set\": {f\"preferences.{preference.category}.{preference.item}\": {\n            \"rating\": preference.rating,\n            \"notes\": preference.notes\n        }}}\n    )\n    \n    if result.modified_count == 1:\n        return {\"message\": \"Preference updated successfully\"}\n    else:\n        raise HTTPException(status_code=400, detail=\"Failed to update preference\")\n```",
+        "testStrategy": "1. Test setting preferences for different categories\n2. Test updating existing preferences\n3. Test validation of preference ratings (1-5 scale)\n4. Test retrieving user preferences\n5. Test error handling for invalid preference data",
+        "priority": "medium",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement Automatic Preference Learning",
+        "description": "Create functionality to automatically update user preferences based on their activity history",
+        "details": "1. Create a model for tracking user activity history\n2. Implement endpoints to record user feedback on activities\n3. Develop algorithm to adjust preferences based on feedback\n4. Add weighting system for recent vs. older activities\n5. Implement periodic preference recalculation\n\nActivity history model:\n```python\nclass ActivityFeedbackModel(BaseModel):\n    id: PyObjectId = Field(default_factory=PyObjectId, alias=\"_id\")\n    user_id: PyObjectId\n    activity_type: PreferenceCategory\n    activity_name: str\n    rating: int = Field(..., ge=1, le=5)\n    timestamp: datetime = Field(default_factory=datetime.utcnow)\n\n    class Config:\n        allow_population_by_field_name = True\n        arbitrary_types_allowed = True\n        json_encoders = {ObjectId: str, datetime: lambda dt: dt.isoformat()}\n```\n\nPreference update algorithm:\n```python\nasync def update_preferences_from_feedback(user_id: PyObjectId):\n    # Get all user feedback\n    cursor = app.mongodb.activity_feedback.find({\"user_id\": user_id})\n    feedback_items = await cursor.to_list(length=100)\n    \n    # Group by activity type and name\n    preferences = {}\n    for item in feedback_items:\n        category = item[\"activity_type\"]\n        name = item[\"activity_name\"]\n        if category not in preferences:\n            preferences[category] = {}\n        if name not in preferences[category]:\n            preferences[category][name] = {\"ratings\": [], \"timestamps\": []}\n        \n        preferences[category][name][\"ratings\"].append(item[\"rating\"])\n        preferences[category][name][\"timestamps\"].append(item[\"timestamp\"])\n    \n    # Calculate weighted average for each preference\n    updated_preferences = {}\n    for category, items in preferences.items():\n        updated_preferences[category] = {}\n        for name, data in items.items():\n            # Calculate recency-weighted average\n            now = datetime.utcnow()\n            weights = [(now - ts).total_seconds() for ts in data[\"timestamps\"]]\n            max_weight = max(weights) if weights else 1\n            normalized_weights = [1 - (w / max_weight) for w in weights]\n            weighted_sum = sum(r * w for r, w in zip(data[\"ratings\"], normalized_weights))\n            weighted_avg = weighted_sum / sum(normalized_weights) if normalized_weights else 0\n            \n            updated_preferences[category][name] = {\"rating\": round(weighted_avg)}\n    \n    # Update user preferences\n    await app.mongodb.users.update_one(\n        {\"_id\": user_id},\n        {\"$set\": {\"preferences\": updated_preferences}}\n    )\n```",
+        "testStrategy": "1. Test recording activity feedback\n2. Test preference adjustment algorithm with various feedback patterns\n3. Test weighting system for recent vs. older activities\n4. Test periodic preference recalculation\n5. Verify that preferences accurately reflect user feedback over time",
+        "priority": "medium",
+        "dependencies": [
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Implement Schedule Recommendation Algorithm",
+        "description": "Create algorithm to recommend optimal activity schedules based on group preferences",
+        "details": "1. Develop algorithm to aggregate preferences from all room members\n2. Implement time-based scheduling logic\n3. Create endpoint to generate schedule recommendations\n4. Add variety constraints to prevent repetitive recommendations\n5. Implement preference conflict resolution\n\nSchedule recommendation algorithm:\n```python\nasync def generate_schedule_recommendation(room_id: PyObjectId, start_time: datetime, end_time: datetime):\n    # Get room and members\n    room = await app.mongodb.rooms.find_one({\"_id\": room_id})\n    if not room:\n        raise HTTPException(status_code=404, detail=\"Room not found\")\n    \n    # Get all member preferences\n    member_preferences = []\n    for member_id in room[\"members\"]:\n        user = await app.mongodb.users.find_one({\"_id\": member_id})\n        if user and \"preferences\" in user:\n            member_preferences.append(user[\"preferences\"])\n    \n    # Aggregate preferences\n    aggregated_preferences = {}\n    for prefs in member_preferences:\n        for category, items in prefs.items():\n            if category not in aggregated_preferences:\n                aggregated_preferences[category] = {}\n            \n            for item, details in items.items():\n                if item not in aggregated_preferences[category]:\n                    aggregated_preferences[category][item] = {\n                        \"total_rating\": 0,\n                        \"count\": 0\n                    }\n                \n                aggregated_preferences[category][item][\"total_rating\"] += details[\"rating\"]\n                aggregated_preferences[category][item][\"count\"] += 1\n    \n    # Calculate average ratings\n    for category, items in aggregated_preferences.items():\n        for item, details in items.items():\n            details[\"avg_rating\"] = details[\"total_rating\"] / details[\"count\"]\n    \n    # Sort activities by average rating within each category\n    top_activities = {}\n    for category, items in aggregated_preferences.items():\n        sorted_items = sorted(items.items(), key=lambda x: x[1][\"avg_rating\"], reverse=True)\n        top_activities[category] = sorted_items[:3]  # Top 3 for each category\n    \n    # Create schedule based on typical activity durations\n    durations = {\n        \"food\": timedelta(hours=1, minutes=30),\n        \"cafe\": timedelta(hours=1),\n        \"board_game\": timedelta(hours=2),\n        \"movie\": timedelta(hours=2, minutes=30),\n        \"other\": timedelta(hours=1)\n    }\n    \n    # Generate schedule\n    schedule = []\n    current_time = start_time\n    \n    # Prioritize food around meal times\n    meal_times = [\n        (datetime.combine(start_time.date(), time(12, 0)), \"lunch\"),\n        (datetime.combine(start_time.date(), time(18, 0)), \"dinner\")\n    ]\n    \n    # Sort categories by priority for the schedule\n    category_priority = [\"food\", \"board_game\", \"movie\", \"cafe\", \"other\"]\n    \n    while current_time < end_time:\n        # Check if we're near a meal time\n        near_meal = False\n        for meal_time, meal_name in meal_times:\n            if abs((current_time - meal_time).total_seconds()) < 3600:  # Within 1 hour\n                if \"food\" in top_activities and top_activities[\"food\"]:\n                    activity = top_activities[\"food\"][0][0]\n                    schedule.append({\n                        \"time\": current_time.strftime(\"%H:%M\"),\n                        \"activity\": f\"{meal_name.capitalize()} at {activity}\",\n                        \"category\": \"food\",\n                        \"duration\": durations[\"food\"]\n                    })\n                    current_time += durations[\"food\"]\n                    near_meal = True\n                    break\n        \n        if near_meal:\n            continue\n        \n        # Add next highest-rated activity that fits in the remaining time\n        for category in category_priority:\n            if category in top_activities and top_activities[category]:\n                if current_time + durations[category] <= end_time:\n                    activity = top_activities[category][0][0]\n                    # Remove this activity to avoid repetition\n                    top_activities[category].pop(0)\n                    \n                    schedule.append({\n                        \"time\": current_time.strftime(\"%H:%M\"),\n                        \"activity\": f\"{category.capitalize()}: {activity}\",\n                        \"category\": category,\n                        \"duration\": durations[category]\n                    })\n                    current_time += durations[category]\n                    break\n        else:\n            # If no activity fits or all are used, add a break\n            schedule.append({\n                \"time\": current_time.strftime(\"%H:%M\"),\n                \"activity\": \"Break/Free time\",\n                \"category\": \"break\",\n                \"duration\": timedelta(minutes=30)\n            })\n            current_time += timedelta(minutes=30)\n    \n    return schedule\n```",
+        "testStrategy": "1. Test preference aggregation with various group compositions\n2. Test schedule generation with different time constraints\n3. Test meal time prioritization\n4. Test variety constraints to prevent repetitive recommendations\n5. Test preference conflict resolution\n6. Verify schedule timing logic and activity durations",
+        "priority": "high",
+        "dependencies": [
+          5,
+          6
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Implement API Endpoints for Schedule Management",
+        "description": "Create API endpoints for generating, saving, and retrieving schedules",
+        "details": "1. Implement endpoint to generate schedule recommendations\n2. Create functionality to save generated schedules\n3. Implement endpoints to retrieve saved schedules\n4. Add ability to modify saved schedules\n5. Implement schedule sharing between room members\n\nSchedule model:\n```python\nclass ScheduleActivityModel(BaseModel):\n    time: str\n    activity: str\n    category: str\n    duration: str\n\nclass ScheduleModel(BaseModel):\n    id: PyObjectId = Field(default_factory=PyObjectId, alias=\"_id\")\n    room_id: PyObjectId\n    creator_id: PyObjectId\n    name: str\n    date: date\n    activities: List[ScheduleActivityModel]\n    created_at: datetime = Field(default_factory=datetime.utcnow)\n    updated_at: datetime = Field(default_factory=datetime.utcnow)\n\n    class Config:\n        allow_population_by_field_name = True\n        arbitrary_types_allowed = True\n        json_encoders = {ObjectId: str, datetime: lambda dt: dt.isoformat(), date: lambda d: d.isoformat()}\n```\n\nEndpoints:\n```python\n@router.post(\"/rooms/{room_id}/schedules/generate\")\nasync def generate_schedule(\n    room_id: str,\n    start_time: datetime,\n    end_time: datetime,\n    current_user: UserModel = Depends(get_current_user)\n):\n    room_obj_id = PyObjectId(room_id)\n    schedule = await generate_schedule_recommendation(room_obj_id, start_time, end_time)\n    return {\"schedule\": schedule}\n\n@router.post(\"/rooms/{room_id}/schedules\")\nasync def save_schedule(\n    room_id: str,\n    schedule_data: ScheduleModel,\n    current_user: UserModel = Depends(get_current_user)\n):\n    room_obj_id = PyObjectId(room_id)\n    \n    # Verify room exists and user is a member\n    room = await app.mongodb.rooms.find_one({\"_id\": room_obj_id})\n    if not room:\n        raise HTTPException(status_code=404, detail=\"Room not found\")\n    if current_user.id not in room[\"members\"]:\n        raise HTTPException(status_code=403, detail=\"Not a member of this room\")\n    \n    # Create schedule document\n    schedule_dict = schedule_data.dict(by_alias=True)\n    schedule_dict[\"room_id\"] = room_obj_id\n    schedule_dict[\"creator_id\"] = current_user.id\n    schedule_dict[\"created_at\"] = datetime.utcnow()\n    schedule_dict[\"updated_at\"] = datetime.utcnow()\n    \n    # Save to database\n    result = await app.mongodb.schedules.insert_one(schedule_dict)\n    \n    if result.inserted_id:\n        return {\"id\": str(result.inserted_id), \"message\": \"Schedule saved successfully\"}\n    else:\n        raise HTTPException(status_code=400, detail=\"Failed to save schedule\")\n\n@router.get(\"/rooms/{room_id}/schedules\")\nasync def get_room_schedules(\n    room_id: str,\n    current_user: UserModel = Depends(get_current_user)\n):\n    room_obj_id = PyObjectId(room_id)\n    \n    # Verify room exists and user is a member\n    room = await app.mongodb.rooms.find_one({\"_id\": room_obj_id})\n    if not room:\n        raise HTTPException(status_code=404, detail=\"Room not found\")\n    if current_user.id not in room[\"members\"]:\n        raise HTTPException(status_code=403, detail=\"Not a member of this room\")\n    \n    # Get schedules for this room\n    cursor = app.mongodb.schedules.find({\"room_id\": room_obj_id})\n    schedules = await cursor.to_list(length=100)\n    \n    return {\"schedules\": schedules}\n```",
+        "testStrategy": "1. Test schedule generation endpoint with various parameters\n2. Test saving schedules with valid and invalid data\n3. Test retrieving schedules for a room\n4. Test modifying saved schedules\n5. Test schedule sharing between room members\n6. Test error handling for non-existent rooms and unauthorized access",
+        "priority": "high",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Implement API Documentation and Error Handling",
+        "description": "Create comprehensive API documentation and implement robust error handling",
+        "details": "1. Add detailed docstrings to all API endpoints\n2. Configure FastAPI's automatic documentation\n3. Implement custom error handling for common errors\n4. Create standardized error response format\n5. Add request validation and error messages\n\nError handling example:\n```python\nfrom fastapi import FastAPI, Request, status\nfrom fastapi.responses import JSONResponse\nfrom fastapi.exceptions import RequestValidationError\n\napp = FastAPI()\n\n@app.exception_handler(RequestValidationError)\nasync def validation_exception_handler(request: Request, exc: RequestValidationError):\n    return JSONResponse(\n        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,\n        content={\n            \"status\": \"error\",\n            \"message\": \"Validation error\",\n            \"details\": exc.errors()\n        }\n    )\n\nclass NotFoundError(Exception):\n    def __init__(self, resource_type: str, resource_id: str):\n        self.resource_type = resource_type\n        self.resource_id = resource_id\n        self.message = f\"{resource_type} with ID {resource_id} not found\"\n        super().__init__(self.message)\n\n@app.exception_handler(NotFoundError)\nasync def not_found_exception_handler(request: Request, exc: NotFoundError):\n    return JSONResponse(\n        status_code=status.HTTP_404_NOT_FOUND,\n        content={\n            \"status\": \"error\",\n            \"message\": exc.message,\n            \"resource_type\": exc.resource_type,\n            \"resource_id\": exc.resource_id\n        }\n    )\n```\n\nAPI documentation enhancement:\n```python\nfrom fastapi import FastAPI\nfrom fastapi.openapi.utils import get_openapi\n\napp = FastAPI(\n    title=\"PlayFriends API\",\n    description=\"API for scheduling activities with friends based on preferences\",\n    version=\"1.0.0\"\n)\n\ndef custom_openapi():\n    if app.openapi_schema:\n        return app.openapi_schema\n    \n    openapi_schema = get_openapi(\n        title=\"PlayFriends API\",\n        version=\"1.0.0\",\n        description=\"API for scheduling activities with friends based on preferences\",\n        routes=app.routes,\n    )\n    \n    # Add custom documentation\n    openapi_schema[\"info\"][\"x-logo\"] = {\n        \"url\": \"https://example.com/logo.png\"\n    }\n    \n    # Add authentication description\n    openapi_schema[\"components\"][\"securitySchemes\"] = {\n        \"Bearer Auth\": {\n            \"type\": \"http\",\n            \"scheme\": \"bearer\",\n            \"bearerFormat\": \"JWT\"\n        }\n    }\n    \n    app.openapi_schema = openapi_schema\n    return app.openapi_schema\n\napp.openapi = custom_openapi\n```",
+        "testStrategy": "1. Verify API documentation is comprehensive and accurate\n2. Test error handling for various error scenarios\n3. Verify standardized error response format\n4. Test request validation with invalid inputs\n5. Verify that error messages are clear and helpful",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Implement Testing and Deployment Configuration",
+        "description": "Set up comprehensive testing and deployment configuration for the backend",
+        "details": "1. Set up pytest for unit and integration testing\n2. Create test fixtures for MongoDB\n3. Implement CI/CD configuration\n4. Set up Docker containerization\n5. Create deployment documentation\n\nPytest configuration:\n```python\n# conftest.py\nimport pytest\nfrom fastapi.testclient import TestClient\nfrom motor.motor_asyncio import AsyncIOMotorClient\nimport mongomock\nimport asyncio\nfrom app import app\n\n@pytest.fixture\ndef event_loop():\n    loop = asyncio.get_event_loop()\n    yield loop\n    loop.close()\n\n@pytest.fixture\nasync def mock_mongodb():\n    app.mongodb_client = AsyncIOMotorClient(\"mongodb://localhost:27017\")\n    app.mongodb = mongomock.MongoClient().db\n    yield app.mongodb\n\n@pytest.fixture\ndef test_client(mock_mongodb):\n    with TestClient(app) as client:\n        yield client\n```\n\nDocker configuration:\n```dockerfile\n# Dockerfile\nFROM python:3.9-slim\n\nWORKDIR /app\n\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY . .\n\nCMD [\"uvicorn\", \"app:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\nDocker Compose configuration:\n```yaml\n# docker-compose.yml\nversion: '3'\n\nservices:\n  api:\n    build: .\n    ports:\n      - \"8000:8000\"\n    environment:\n      - MONGODB_URL=mongodb://mongo:27017/\n      - SECRET_KEY=your-secret-key\n      - ALGORITHM=HS256\n      - ACCESS_TOKEN_EXPIRE_MINUTES=30\n    depends_on:\n      - mongo\n\n  mongo:\n    image: mongo:4.4\n    ports:\n      - \"27017:27017\"\n    volumes:\n      - mongo_data:/data/db\n\nvolumes:\n  mongo_data:\n```",
+        "testStrategy": "1. Run unit tests for all components\n2. Run integration tests for API endpoints\n3. Test Docker container build and execution\n4. Verify MongoDB connection in containerized environment\n5. Test deployment process documentation",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-11T14:51:00.140Z",
+      "updated": "2025-07-11T14:51:00.140Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

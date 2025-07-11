@@ -1,0 +1,35 @@
+<context>
+# Overview  
+This is Backend Profjects for application which helps users to make schedule for playing with their friends.
+
+# Core Features  
+In frontend, Users can make or join in some room which their friends can enter too.
+The Backend should store user and room room data. Each users have their preference about food, play contents such as going beautiful cafe, board game cafe, watching movie etc.
+This backend should have login, making editing, entering room, setting their preference and update their preference automatically by user data.
+It also recommend best play contents schedule such as PM 1:00 restaurant, PM 2:00 cafe, etc, using the preference of members who enjoyed in same room.
+
+# User Experience  
+This should have some API for the app.
+</context>
+<PRD>
+# Technical Architecture  
+It use mongodb and fastapi.
+
+# Development Roadmap  
+[Break down the development process into phases:
+- MVP requirements
+It should have all features described above.
+- Future enhancements
+It will recommend exact place using map API not just concepts like cafe.
+- Do not think about timelines whatsoever -- all that matters is scope and detailing exactly what needs to be build in each phase so it can later be cut up into tasks]
+
+# Logical Dependency Chain
+[Define the logical order of development:
+- Which features need to be built first (foundation)
+API for login, making&joining room]
+
+# Appendix  
+[Include any additional information:
+- Research findings
+- Technical specifications]
+</PRD>
