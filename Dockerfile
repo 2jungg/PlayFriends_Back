@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 COPY . /app
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8080
 
 # Run uvicorn when the container launches
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The PORT environment variable is automatically set by Cloud Run.
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
