@@ -7,6 +7,15 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA']
 
+  # Run the database seeder
+  - name: 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA'
+    entrypoint: 'python3'
+    args: ['./scripts/seed_db.py']
+    env:
+      - 'MONGO_URI=${_MONGO_URI}'
+      - 'MONGO_DATABASE=${_MONGO_DATABASE}'
+      - 'SECRET_KEY=${_SECRET_KEY}'
+
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -22,13 +31,15 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'MONGO_URI=${_MONGO_URI}, MONGO_DATABASE=${_MONGO_DATABASE}, SECRET_KEY=${_SECRET_KEY}'
+      - 'MONGO_URI=${_MONGO_URI},MONGO_DATABASE=${_MONGO_DATABASE},SECRET_KEY=${_SECRET_KEY}'
 
 images:
   - 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA'
 
 substitutions:
-  _MONGO_URI: 'your-mongodb-atlas-uri-here' # Default value, will be overridden by trigger
+  _MONGO_URI: 'your-mongodb-uri'
+  _MONGO_DATABASE: 'your-db-name'
+  _SECRET_KEY: 'your-secret-key'
 
 options:
   logging: CLOUD_LOGGING_ONLY

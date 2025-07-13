@@ -4,7 +4,7 @@ from typing import List, Optional
 from passlib.context import CryptContext
 
 from app.core.config import settings
-from app.schemas.user import UserCreate, FoodPreferences, ActivityPreferences
+from app.schemas.user import UserCreate, FoodPreferences, PlayPreferences
 from app.models.user import UserModel
 from app.models.group import GroupModel
 
@@ -39,7 +39,7 @@ class UserService:
 
         user_dict.update({
             "food_preferences": FoodPreferences().dict(),
-            "activity_preferences": ActivityPreferences().dict(),
+            "play_preferences": PlayPreferences().dict(),
             "activity_log": []
         })
         

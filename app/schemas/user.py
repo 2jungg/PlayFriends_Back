@@ -32,7 +32,7 @@ class FoodPreferences(BaseModel):
     cuisine_types: List[CuisineTypePreference] = Field(default_factory=lambda: [CuisineTypePreference(name=item) for item in FoodCuisineType])
 
 # 놀이 취향 전체를 담는 모델
-class ActivityPreferences(BaseModel):
+class PlayPreferences(BaseModel):
     crowd_level: float = Field(default=0.0, ge=-1, le=1, description="붐비는 정도 (-1: 조용, 1: 붐빔)")
     activeness_level: float = Field(default=0.0, ge=-1, le=1, description="활동성 (-1: 관람형, 1: 체험형)")
     trend_level: float = Field(default=0.0, ge=-1, le=1, description="유행 민감도 (-1: 비유행, 1: 유행)")
@@ -54,13 +54,13 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     username: str = Field(..., description="사용자 이름")
     food_preferences: Optional[FoodPreferences] = None
-    activity_preferences: Optional[ActivityPreferences] = None
+    play_preferences: Optional[PlayPreferences] = None
 
 # API 응답으로 보낼 사용자 정보
 class User(UserBase):
     id: str = Field(alias="_id")
     food_preferences: FoodPreferences = Field(default_factory=FoodPreferences)
-    activity_preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
+    play_preferences: PlayPreferences = Field(default_factory=PlayPreferences)
     
     class Config:
         from_attributes = True
