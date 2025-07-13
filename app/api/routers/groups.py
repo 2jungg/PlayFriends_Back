@@ -3,10 +3,12 @@ from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupList, Message
-from app.services.group_service import GroupService
-from app.core.security import get_current_user
 from app.models.user import UserModel
+from app.services.group_service import GroupService
+from app.schemas.category import CategoryListResponse
+from app.schemas.schedule import ScheduleResponse
 from app.db.session import get_db
+from app.core.security import get_current_user
 
 router = APIRouter()
 
@@ -126,3 +128,44 @@ async def leave_group(
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to leave group. You might not be in the group.")
     return {"message": "Successfully left the group"}
+
+@router.post("/groups/{group_id}/recommend-categories", response_model=CategoryListResponse)
+async def recommend_categories(
+    group_id: str,
+    service: GroupService = Depends(get_group_service),
+    # current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Recommend play categories for a group based on member preferences.
+    Only the group owner can request recommendations.
+    """
+    group = await service.get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    # if group.owner_id != current_user.id:
+    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the group owner can get recommendations")
+
+    categories = await service.recommend_categories(group_id)
+    return {"categories": categories}
+
+@router.post("/groups/{group_id}/schedules", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED)
+async def create_schedule(
+    group_id: str,
+    category_ids: List[str] = Body(..., embed=True),
+    service: GroupService = Depends(get_group_service),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Create a schedule for a group based on selected categories.
+    Any member of the group can create a schedule.
+    """
+    group = await service.get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    if current_user.id not in group.member_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only group members can create a schedule")
+
+    schedule = await service.create_schedule_from_categories(group_id, category_ids)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create schedule. Check group times or selected categories.")
+    return schedule

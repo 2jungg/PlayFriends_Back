@@ -83,4 +83,13 @@ class UserService:
                 "play_preferences": play_preferences.dict()
             }}
         )
+        
+        if result.modified_count > 0:
+            user = await self.get_user(user_id)
+            if user and user.group_ids:
+                from app.services.group_service import GroupService
+                group_service = GroupService(self.db.client)
+                for group_id in user.group_ids:
+                    await group_service.calculate_and_update_group_preferences(group_id)
+
         return result.modified_count > 0
