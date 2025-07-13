@@ -10,26 +10,26 @@ from app.core.enums import (
 # 각 취향 항목에 맞는 모델 정의
 class IngredientPreference(BaseModel):
     name: FoodIngredient
-    score: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.0, ge=-1, le=1)
 
 class TastePreference(BaseModel):
     name: FoodTaste
-    score: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.0, ge=-1, le=1)
 
 class CookingMethodPreference(BaseModel):
     name: FoodCookingMethod
-    score: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.0, ge=-1, le=1)
 
 class CuisineTypePreference(BaseModel):
     name: FoodCuisineType
-    score: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.0, ge=-1, le=1)
 
 # 음식 취향 전체를 담는 모델
 class FoodPreferences(BaseModel):
-    ingredients: List[IngredientPreference] = Field(default_factory=list)
-    tastes: List[TastePreference] = Field(default_factory=list)
-    cooking_methods: List[CookingMethodPreference] = Field(default_factory=list)
-    cuisine_types: List[CuisineTypePreference] = Field(default_factory=list)
+    ingredients: List[IngredientPreference] = Field(default_factory=lambda: [IngredientPreference(name=item) for item in FoodIngredient])
+    tastes: List[TastePreference] = Field(default_factory=lambda: [TastePreference(name=item) for item in FoodTaste])
+    cooking_methods: List[CookingMethodPreference] = Field(default_factory=lambda: [CookingMethodPreference(name=item) for item in FoodCookingMethod])
+    cuisine_types: List[CuisineTypePreference] = Field(default_factory=lambda: [CuisineTypePreference(name=item) for item in FoodCuisineType])
 
 # 놀이 취향 전체를 담는 모델
 class ActivityPreferences(BaseModel):
@@ -48,7 +48,7 @@ class UserBase(BaseModel):
 
 # 사용자 생성 시 받을 데이터
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=8, description="비밀번호 (최소 8자 이상)")
 
 # 사용자 정보 업데이트 시 받을 데이터
 class UserUpdate(BaseModel):
@@ -63,6 +63,18 @@ class User(UserBase):
     activity_preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
     
     class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
+        from_attributes = True
+        populate_by_name = True
         json_encoders = {"id": str}
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    userid: str
+    password: str
+    auto_login: bool = False

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from app.db.session import client, database
+from app.db.session import client
 
 router = APIRouter()
 

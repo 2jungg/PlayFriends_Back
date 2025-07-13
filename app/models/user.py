@@ -1,18 +1,30 @@
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from pydantic import BaseModel, Field, EmailStr, field_validator
+from typing import List, Optional, Any
+from bson import ObjectId
 from app.schemas.user import FoodPreferences, ActivityPreferences
 
 class UserModel(BaseModel):
-    id: str = Field(alias="_id")
+    id: str = Field(alias="_id", default=None)
     userid: str = Field(..., description="고유한 사용자 ID (Unique Index 필요)")
     username: str = Field(..., description="사용자 이름")
     hashed_password: str
-    is_active: bool = True
+    is_active: bool = Field(True)
+    
     food_preferences: FoodPreferences = Field(default_factory=FoodPreferences)
     activity_preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
-    activity_log: List[str] = Field(default=[], description="참여한 활동 ID 목록")
+    
+    group_ids: List[str] = Field(default=[], description="사용자가 속한 Group ID 목록")
+    activity_history: List[str] = Field(default=[], description="사용자가 참여한 Activity ID 목록 (시간순)")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def validate_id(cls, v: Any) -> str:
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
 
     class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
+        from_attributes = True
+        populate_by_name = True
+        validate_by_name = True
         json_encoders = {"id": str}
