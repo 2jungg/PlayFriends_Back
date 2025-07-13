@@ -1,6 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from typing import List, Optional
+import datetime
 
 from app.models.group import GroupModel
 from app.schemas.group import GroupCreate, GroupUpdate
@@ -100,5 +101,20 @@ class GroupService:
         await self.user_service.remove_group_from_user(user_id, group_id)
 
         return group_update_result.modified_count > 0
+
+    async def deactivate_expired_groups(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        query = {
+            "is_active": True,
+            "$or": [
+                {"endtime": {"$ne": None, "$lt": now}},
+                {"endtime": None, "starttime": {"$lt": now}}
+            ]
+        }
+        result = await self.collection.update_many(
+            query,
+            {"$set": {"is_active": False}}
+        )
+        print(f"Deactivated {result.modified_count} expired groups.")
 
 group_service: "GroupService"
