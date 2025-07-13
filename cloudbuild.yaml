@@ -23,6 +23,8 @@ steps:
       - '--allow-unauthenticated'
       - '--set-env-vars'
       - 'MONGO_URI=${_MONGO_URI}' # Pass environment variable from build trigger
+      - 'MONGO_DATABASE=${_MONGO_DATABASE}'
+      - 'SECRET_KEY=${_SECRET_KEY}'
 
 images:
   - 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA'

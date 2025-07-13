@@ -9,8 +9,8 @@ class GroupModel(BaseModel):
     starttime: datetime.datetime = Field(..., description="시작 시간")
     endtime: Optional[datetime.datetime] = Field(None, description="종료 시간")
     is_active: bool = Field(True)
-    owner_id: str = Field(..., description="방장 User ID")
-    member_ids: List[str] = Field(default=[], description="참여자 User ID 목록")
+    owner_id: str = Field(..., description="방장 _ID")
+    member_ids: List[str] = Field(default=[], description="참여자 _ID 목록")
 
     @field_validator("id", mode="before")
     @classmethod
