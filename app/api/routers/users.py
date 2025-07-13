@@ -9,7 +9,7 @@ from app.services.auth_service import authenticate_user
 from app.services.user_service import UserService
 from app.core.config import settings
 from datetime import timedelta
-from app.schemas.user import LoginRequest
+from app.schemas.user import LoginRequest, FoodPreferences, PlayPreferences
 
 router = APIRouter()
 
@@ -86,3 +86,25 @@ async def get_groups_by_user(
 
     groups = await service.get_user_groups(user)
     return {"groups": groups}
+
+@router.put("/users/preferences", status_code=status.HTTP_200_OK)
+async def update_preferences(
+    food_preferences: FoodPreferences,
+    play_preferences: PlayPreferences,
+    service: UserService = Depends(get_user_service),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Update user's food and play preferences.
+    """
+    success = await service.update_preferences(
+        user_id=str(current_user.id),
+        food_preferences=food_preferences,
+        play_preferences=play_preferences
+    )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or preferences not updated."
+        )
+    return {"message": "Preferences updated successfully"}
