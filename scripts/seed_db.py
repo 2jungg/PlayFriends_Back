@@ -75,66 +75,7 @@ def seed_data():
     print("\n카테고리 데이터 삽입 완료")
 
     # 활동 데이터 생성 및 삽입
-    activities = [
-        # 놀거리 활동
-        ActivityModel(
-            name="CGV 강남",
-            type=ActivityType.ACTIVITY,
-            category_id=category_ids["영화관"],
-            play_attributes=PlayAttributes(crowd_level=0.5, activeness_level=-0.5)
-        ),
-        ActivityModel(
-            name="히어로보드게임카페 강남점",
-            type=ActivityType.ACTIVITY,
-            category_id=category_ids["보드게임카페"],
-            play_attributes=PlayAttributes(planning_level=-0.8, vibe_level=0.3)
-        ),
-        ActivityModel(
-            name="롯데월드 어드벤처",
-            type=ActivityType.ACTIVITY,
-            category_id=category_ids["놀이공원"],
-            play_attributes=PlayAttributes(crowd_level=0.8, activeness_level=0.9, trend_level=0.6)
-        ),
-        ActivityModel(
-            name="한강공원 산책",
-            type=ActivityType.ACTIVITY,
-            category_id=category_ids["산책"],
-            play_attributes=PlayAttributes(activeness_level=-0.8, location_preference=0.9)
-        ),
-        # 음식 활동
-        ActivityModel(
-            name="A1그릴",
-            type=ActivityType.FOOD,
-            category_id=category_ids["식당"],
-            food_attributes=FoodAttributes(
-                cuisine_types=[FoodCuisineType.KOREAN],
-                ingredients=[FoodIngredient.MEAT],
-                tastes=[FoodTaste.SALTY],
-                cooking_methods=[FoodCookingMethod.GRILL]
-            )
-        ),
-        ActivityModel(
-            name="엽기떡볶이",
-            type=ActivityType.FOOD,
-            category_id=category_ids["맛집"],
-            food_attributes=FoodAttributes(
-                cuisine_types=[FoodCuisineType.KOREAN],
-                ingredietns=[FoodIngredient.FLOUR],
-                tastes=[FoodTaste.SPICY],
-                cooking_methods=[FoodCookingMethod.STIR_FRIED]
-            )
-        ),
-        ActivityModel(
-            name="스타벅스",
-            type=ActivityType.FOOD,
-            category_id=category_ids["카페"],
-            food_attributes=FoodAttributes(
-                cuisine_types=[FoodCuisineType.WESTERN],
-                tastes=[FoodTaste.SPICY],
-                cooking_methods=[FoodCookingMethod.LIQUID]
-            )
-        ),
-    ]
+    activities = get_dummy_activities(category_ids)
 
     db.activities.insert_many([activity.model_dump(by_alias=True, exclude_none=True) for activity in activities])
     print("\n활동 데이터 삽입 완료")
