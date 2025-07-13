@@ -1,5 +1,9 @@
 from enum import Enum
 
+class ActivityType(str, Enum):
+    FOOD = "음식"
+    ACTIVITY = "놀거리"
+
 class FoodIngredient(str, Enum):
     MEAT = "고기"
     VEGETABLE = "채소"

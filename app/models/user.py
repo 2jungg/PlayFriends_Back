@@ -14,7 +14,6 @@ class UserModel(BaseModel):
     activity_preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
     
     group_ids: List[str] = Field(default=[], description="사용자가 속한 Group ID 목록")
-    activity_history: List[str] = Field(default=[], description="사용자가 참여한 Activity ID 목록 (시간순)")
 
     @field_validator("id", mode="before")
     @classmethod
