@@ -26,6 +26,7 @@ class FoodCookingMethod(str, Enum):
     STEAMED = "찜/찌개"
     STIR_FRIED = "볶음"
     FRIED = "튀김"
+    RAW = "날것"
     LIQUID = "음료"
 
 class FoodCuisineType(str, Enum):
