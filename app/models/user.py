@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import List, Optional, Any
 from bson import ObjectId
-from app.schemas.user import FoodPreferences, ActivityPreferences
+from app.schemas.user import FoodPreferences, PlayPreferences
 
 class UserModel(BaseModel):
     id: str = Field(alias="_id", default=None)
@@ -11,7 +11,7 @@ class UserModel(BaseModel):
     is_active: bool = Field(True)
     
     food_preferences: FoodPreferences = Field(default_factory=FoodPreferences)
-    activity_preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
+    play_preferences: PlayPreferences = Field(default_factory=PlayPreferences)
     
     group_ids: List[str] = Field(default=[], description="사용자가 속한 Group ID 목록")
 

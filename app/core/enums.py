@@ -10,12 +10,15 @@ class FoodIngredient(str, Enum):
     FISH = "생선"
     MILK = "우유"
     EGG = "계란"
+    FLOUR = "밀가루"
 
 class FoodTaste(str, Enum):
-    SPICY = "매움"
-    GREASY = "느끼함"
+    SPICY = "매운"
+    GREASY = "느끼한"
     SWEET = "단"
     SALTY = "짠"
+    BITTER = "쓴"
+    SOUR = "신"
 
 class FoodCookingMethod(str, Enum):
     SOUP = "국물"
@@ -23,6 +26,7 @@ class FoodCookingMethod(str, Enum):
     STEAMED = "찜/찌개"
     STIR_FRIED = "볶음"
     FRIED = "튀김"
+    LIQUID = "음료"
 
 class FoodCuisineType(str, Enum):
     KOREAN = "한식"
