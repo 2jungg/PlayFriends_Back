@@ -59,7 +59,6 @@ def seed_data():
     food_categories = {''
         "식당": [],
         "카페": [],
-        "맛집": []
     }
 
     for parent, children in play_categories.items():
