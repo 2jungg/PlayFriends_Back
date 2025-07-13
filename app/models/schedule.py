@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Any
+from bson import ObjectId
 import datetime
 from bson import ObjectId
 
@@ -13,6 +14,13 @@ class ScheduleModel(BaseModel):
     group_id: str = Field(..., description="그룹의 ID")
     scheduled_activities: List[ScheduledActivity] = Field(..., description="스케줄된 활동 목록")
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, description="생성 시간")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def validate_id(cls, v: Any) -> str:
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

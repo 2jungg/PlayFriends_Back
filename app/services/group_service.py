@@ -26,16 +26,11 @@ class GroupService:
         self.schedules_collection = self.db.schedules
         self.user_service = UserService(db_client)
 
-    def _cosine_similarity(self, v1, v2):
-        """두 벡터 간의 코사인 유사도를 계산합니다."""
+    def _euclidean_distance(self, v1, v2):
+        """두 벡터 간의 유클리드 거리를 계산합니다."""
         v1 = np.array(v1)
         v2 = np.array(v2)
-        dot_product = np.dot(v1, v2)
-        norm_v1 = np.linalg.norm(v1)
-        norm_v2 = np.linalg.norm(v2)
-        if norm_v1 == 0 or norm_v2 == 0:
-            return 0.0
-        return dot_product / (norm_v1 * norm_v2)
+        return np.linalg.norm(v1 - v2)
 
     async def create_group(self, group_data: GroupCreate, owner_id: str) -> GroupModel:
         group_dict = group_data.dict()
@@ -214,17 +209,18 @@ class GroupService:
             category = CategoryModel(**category_doc)
             if category.play_attributes:
                 category_vector = list(category.play_attributes.dict().values())
-                similarity = self._cosine_similarity(group_vector, category_vector)
-                categories.append((category, similarity))
-        categories.sort(key=lambda x: x[1], reverse=True)
+                distance = self._euclidean_distance(group_vector, category_vector)
+                categories.append((category, distance))
         
-        return [category for category, similarity in categories[:top_n]]
+        categories.sort(key=lambda x: x[1])
+        
+        return [category for category, distance in categories[:top_n]]
 
     async def create_schedule_from_categories(self, group_id: str, category_ids: List[str]) -> Optional[ScheduleModel]:
         group = await self.get_group(group_id)
-        if not group or not group.starttime or not group.endtime:
+        if not group or not group.starttime:
             return None
-
+        
         group_prefs = group.play_preferences
         if not group_prefs:
             group_with_prefs = await self.calculate_and_update_group_preferences(group_id)
@@ -237,16 +233,16 @@ class GroupService:
         selected_activities = []
         for category_id in category_ids:
             best_activity = None
-            max_similarity = -1
+            min_distance = float('inf')
 
             cursor = self.activities_collection.find({"category_id": category_id, "play_attributes": {"$ne": None}})
             async for activity_doc in cursor:
                 activity = ActivityModel(**activity_doc)
                 if activity.play_attributes:
                     activity_vector = list(activity.play_attributes.dict().values())
-                    similarity = self._cosine_similarity(group_vector, activity_vector)
-                    if similarity > max_similarity:
-                        max_similarity = similarity
+                    distance = self._euclidean_distance(group_vector, activity_vector)
+                    if distance < min_distance:
+                        min_distance = distance
                         best_activity = activity
             
             if best_activity:
