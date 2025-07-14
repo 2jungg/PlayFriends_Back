@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from typing import List
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from geopy.distance import geodesic
 
 from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupList, Message
+from app.schemas.schedule import ScheduleSuggestion
 from app.models.user import UserModel
 from app.services.group_service import GroupService
 from app.schemas.category import CategoryListResponse
@@ -168,3 +170,39 @@ async def create_schedule(
     if not schedules:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create schedule. Check group times or selected categories.")
     return schedules
+
+@router.post("/groups/schedule", response_model=GroupResponse, summary="그룹 스케줄 확정 및 저장")
+async def confirm_schedule(
+    suggestion: ScheduleSuggestion,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    service: GroupService = Depends(get_group_service)
+):
+    """
+    제안된 스케줄을 그룹에 확정하고, 장소 간의 총 이동 거리를 계산하여 저장합니다.
+    """
+    group = await service.get_group(suggestion.group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    total_distance = 0.0
+    activities = suggestion.scheduled_activities
+    
+    if len(activities) > 1:
+        for i in range(len(activities) - 1):
+            loc1 = activities[i].location
+            loc2 = activities[i+1].location
+            if loc1 and loc2 and loc1.coordinates and loc2.coordinates:
+                coords1 = (loc1.coordinates[1], loc1.coordinates[0]) # (lat, lon)
+                coords2 = (loc2.coordinates[1], loc2.coordinates[0]) # (lat, lon)
+                total_distance += geodesic(coords1, coords2).kilometers
+
+    update_data = GroupUpdate(
+        schedule=[activity.model_dump() for activity in activities],
+        total_distance_km=total_distance
+    )
+    
+    updated_group = await service.update_group(suggestion.group_id, update_data)
+    if not updated_group:
+        raise HTTPException(status_code=500, detail="Failed to update group schedule")
+        
+    return updated_group
