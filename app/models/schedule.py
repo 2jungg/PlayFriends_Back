@@ -29,3 +29,6 @@ class ScheduleModel(BaseModel):
             ObjectId: str,
             datetime.datetime: lambda dt: dt.isoformat(),
         }
+
+class ListScheduleModel(BaseModel):
+    schedules: List[ScheduleModel]

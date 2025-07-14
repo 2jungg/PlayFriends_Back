@@ -52,7 +52,7 @@ class UserCreate(UserBase):
 
 # 사용자 정보 업데이트 시 받을 데이터
 class UserUpdate(BaseModel):
-    username: str = Field(..., description="사용자 이름")
+    username: Optional[str] = Field(None, description="사용자 이름")
     food_preferences: Optional[FoodPreferences] = None
     play_preferences: Optional[PlayPreferences] = None
 

@@ -20,8 +20,15 @@ class GroupResponse(GroupModel):
     food_preferences: Optional[FoodPreferences] = Field(None, description="그룹의 통합 음식 선호도")
     play_preferences: Optional[PlayPreferences] = Field(None, description="그룹의 통합 놀이 선호도")
 
+class GroupMember(BaseModel):
+    id: str
+    name: str
+
+class GroupDetailResponse(GroupResponse):
+    members: List[GroupMember] = Field([], description="참여자 이름 목록")
+
 class GroupList(BaseModel):
-    groups: List[GroupResponse]
+    groups: List[GroupDetailResponse]
 
 class Message(BaseModel):
     message: str

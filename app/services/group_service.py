@@ -1,16 +1,18 @@
 import datetime
+import numpy as np
 from collections import defaultdict
 from typing import List, Optional
-
-import numpy as np
+from itertools import permutations, product
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.models.group import GroupModel
 from app.models.category import CategoryModel
-from app.models.activity import ActivityModel
-from app.models.schedule import ScheduleModel, ScheduledActivity
+from app.models.activity import ActivityModel, FoodAttributes
+from app.models.schedule import ScheduledActivity
+from app.schemas.schedule import ScheduleSuggestion, ListScheduleResponse
 from app.schemas.user import FoodPreferences, PlayPreferences
+from app.schemas.category import CategoryListResponse
 from app.schemas.group import GroupCreate, GroupUpdate
 from app.core.config import settings
 from app.core.enums import ActivityType
@@ -31,6 +33,58 @@ class GroupService:
         v1 = np.array(v1)
         v2 = np.array(v2)
         return np.linalg.norm(v1 - v2)
+
+    def _calculate_food_similarity_score(self, prefs: FoodPreferences, attrs: FoodAttributes) -> float:
+        """음식 선호도와 속성 간의 유사도 점수를 계산합니다."""
+        score = 0
+        if not prefs or not attrs:
+            return 0
+        
+        pref_dict = {
+            'ingredients': {p.name.value: p.score for p in prefs.ingredients},
+            'tastes': {p.name.value: p.score for p in prefs.tastes},
+            'cooking_methods': {p.name.value: p.score for p in prefs.cooking_methods},
+            'cuisine_types': {p.name.value: p.score for p in prefs.cuisine_types}
+        }
+
+        attr_dict = {
+            'ingredients': [a.value for a in attrs.ingredients],
+            'tastes': [a.value for a in attrs.tastes],
+            'cooking_methods': [a.value for a in attrs.cooking_methods],
+            'cuisine_types': [a.value for a in attrs.cuisine_types]
+        }
+
+        for pref_type, preferences in pref_dict.items():
+            for pref_name, pref_score in preferences.items():
+                if pref_name in attr_dict[pref_type]:
+                    score += pref_score
+
+        return score
+
+    def _calculate_food_attraction_score(self, attr1: FoodAttributes, attr2: FoodAttributes) -> float:
+        """두 음식 활동 간의 유사도 점수를 계산합니다."""
+        if not attr1 or not attr2:
+            return 0
+        
+        score = 0
+        attr1_sets = {
+            'ingredients': {a.value for a in attr1.ingredients},
+            'tastes': {a.value for a in attr1.tastes},
+            'cooking_methods': {a.value for a in attr1.cooking_methods},
+            'cuisine_types': {a.value for a in attr1.cuisine_types}
+        }
+        attr2_sets = {
+            'ingredients': {a.value for a in attr2.ingredients},
+            'tastes': {a.value for a in attr2.tastes},
+            'cooking_methods': {a.value for a in attr2.cooking_methods},
+            'cuisine_types': {a.value for a in attr2.cuisine_types}
+        }
+
+        for key in attr1_sets:
+            score += len(attr1_sets[key].intersection(attr2_sets[key]))
+        
+        # 유사도가 높을수록 거리는 가까워야 하므로 역수로 변환 (0으로 나누는 것 방지)
+        return 1 / (1 + score)
 
     async def create_group(self, group_data: GroupCreate, owner_id: str) -> GroupModel:
         group_dict = group_data.dict()
@@ -190,91 +244,214 @@ class GroupService:
         
         return updated_group
 
-    async def recommend_categories(self, group_id: str, top_n: int = 5) -> List[CategoryModel]:
+    async def recommend_categories(self, group_id: str, top_n: int = 5) -> CategoryListResponse:
         group = await self.get_group(group_id)
         if not group:
             return []
 
+        time_based_recommendations = []
+        
+        # 시간 기반 카테고리 추천
+        if group.starttime:
+            # 점심 시간 (11:30 ~ 14:00)
+            lunch_start = group.starttime.replace(hour=11, minute=30, second=0, microsecond=0)
+            lunch_end = group.starttime.replace(hour=14, minute=0, second=0, microsecond=0)
+            
+            # 저녁 시간 (17:30 ~ 20:00)
+            dinner_start = group.starttime.replace(hour=17, minute=30, second=0, microsecond=0)
+            dinner_end = group.starttime.replace(hour=20, minute=0, second=0, microsecond=0)
+
+            group_start_time = group.starttime
+            group_end_time = group.endtime if group.endtime else group.starttime
+
+            # 식사시간 겹치는지 확인
+            is_lunch_time = max(group_start_time, lunch_start) < min(group_end_time, lunch_end)
+            is_dinner_time = max(group_start_time, dinner_start) < min(group_end_time, dinner_end)
+
+            if is_lunch_time or is_dinner_time:
+                restaurant_category = await self.categories_collection.find_one({"name": "식당"})
+                if restaurant_category:
+                    time_based_recommendations.append(CategoryModel(**restaurant_category))
+
+            # 음주시간 (20:00 이후)
+            if group_start_time >= dinner_end:
+                bar_category = await self.categories_collection.find_one({"name": "주점"})
+                if bar_category:
+                    time_based_recommendations.append(CategoryModel(**bar_category))
+        
         group_prefs = group.play_preferences
         if not group_prefs:
             group_with_prefs = await self.calculate_and_update_group_preferences(group_id)
             if not group_with_prefs:
-                return []
+                return time_based_recommendations
             group_prefs = group_with_prefs.play_preferences
 
         group_vector = list(group_prefs.dict().values())
-        categories = []
-        cursor = self.categories_collection.find({"type": ActivityType.ACTIVITY.value, "play_attributes": {"$ne": None}})
+        
+        preference_based_categories = []
+        # parent_category_id가 있는 카테고리만 추천 (하위 카테고리)
+        query = {
+            "type": ActivityType.ACTIVITY.value, 
+            "play_attributes": {"$ne": None},
+            "parent_category_id": {"$ne": None}
+        }
+        cursor = self.categories_collection.find(query)
         async for category_doc in cursor:
             category = CategoryModel(**category_doc)
             if category.play_attributes:
                 category_vector = list(category.play_attributes.dict().values())
                 distance = self._euclidean_distance(group_vector, category_vector)
-                categories.append((category, distance))
+                preference_based_categories.append((category, distance))
         
-        categories.sort(key=lambda x: x[1])
+        preference_based_categories.sort(key=lambda x: x[1])
         
-        return [category for category, distance in categories[:top_n]]
+        # top_n 만큼 선호도 기반 카테고리 선택
+        top_preference_categories = [cat for cat, dist in preference_based_categories[:top_n]]
 
-    async def create_schedule_from_categories(self, group_id: str, category_ids: List[str]) -> Optional[ScheduleModel]:
-        group = await self.get_group(group_id)
-        if not group or not group.starttime:
-            return None
+        # 중복 제거 및 최종 목록 생성
+        existing_ids = {str(c.id) for c in time_based_recommendations}
+        final_recommendations = [str(c.name) for c in time_based_recommendations]
+
+        for category in top_preference_categories:
+            if str(category.id) not in existing_ids:
+                final_recommendations.append(str(category.name))
         
-        group_prefs = group.play_preferences
-        if not group_prefs:
+        return {"categories": final_recommendations}
+
+    async def create_schedules(self, group_id: str, category_names: List[str], top_n: int = 4) -> Optional[ListScheduleResponse]:
+        group = await self.get_group(group_id)
+        if not group or not group.starttime or not group.endtime:
+            return None
+
+        category_ids = []
+        for cat_name in category_names:
+            category = await self.categories_collection.find_one({"name": cat_name})
+            if category:
+                category_ids.append(str(category["_id"]))
+        group_play_prefs = group.play_preferences
+        group_food_prefs = group.food_preferences
+        if not group_play_prefs or not group_food_prefs:
             group_with_prefs = await self.calculate_and_update_group_preferences(group_id)
             if not group_with_prefs:
                 return None
-            group_prefs = group_with_prefs.play_preferences
+            group_play_prefs = group_with_prefs.play_preferences
+            group_food_prefs = group_with_prefs.food_preferences
         
-        group_vector = list(group_prefs.dict().values())
-        
-        selected_activities = []
+        group_play_vector = list(group_play_prefs.dict().values())
+
+        activity_pools = []
         for category_id in category_ids:
-            best_activity = None
-            min_distance = float('inf')
-
-            cursor = self.activities_collection.find({"category_id": category_id, "play_attributes": {"$ne": None}})
-            async for activity_doc in cursor:
-                activity = ActivityModel(**activity_doc)
-                if activity.play_attributes:
-                    activity_vector = list(activity.play_attributes.dict().values())
-                    distance = self._euclidean_distance(group_vector, activity_vector)
-                    if distance < min_distance:
-                        min_distance = distance
-                        best_activity = activity
+            category = await self.categories_collection.find_one({"_id": ObjectId(category_id)})
+            if not category:
+                continue
             
-            if best_activity:
-                selected_activities.append(best_activity)
+            category_model = CategoryModel(**category)
+            activities = []
+            cursor = self.activities_collection.find({"category_id": category_id})
+            async for activity_doc in cursor:
+                activities.append(ActivityModel(**activity_doc))
 
-        if not selected_activities:
+            if not activities:
+                continue
+
+            # Sort activities based on similarity to group preferences
+            if category_model.type == ActivityType.ACTIVITY:
+                activities.sort(
+                    key=lambda act: self._euclidean_distance(group_play_vector, list(act.play_attributes.dict().values())) if act.play_attributes else float('inf')
+                )
+            elif category_model.type == ActivityType.FOOD:
+                activities.sort(
+                    key=lambda act: self._calculate_food_similarity_score(group_food_prefs, act.food_attributes) if act.food_attributes else 0,
+                    reverse=True
+                )
+            
+            # Add the top 10 activities for this category to our list of pools
+            # This preserves duplicates if a category_id is provided multiple times
+            activity_pools.append(activities[:10])
+
+        if not activity_pools:
             return None
 
-        # Distribute time equally among selected activities
-        num_activities = len(selected_activities)
-        total_duration = (group.endtime - group.starttime).total_seconds()
-        duration_per_activity = total_duration / num_activities
-        
-        scheduled_activities = []
-        current_time = group.starttime
-        for activity in selected_activities:
-            end_time = current_time + datetime.timedelta(seconds=duration_per_activity)
-            scheduled_activities.append(ScheduledActivity(
-                activity_id=activity.id,
-                start_time=current_time,
-                end_time=end_time
-            ))
-            current_time = end_time
+        # Create all possible combinations of one activity from each category's pool
+        all_combinations = list(product(*activity_pools))
 
-        schedule_data = {
-            "group_id": group_id,
-            "scheduled_activities": [sa.dict() for sa in scheduled_activities]
-        }
+        best_schedules = []
+        for combo in all_combinations:
+            # For each combination, find the best permutation (sequence)
+            min_dist = float('inf')
+            best_permutation = None
+            
+            for p in permutations(combo):
+                current_dist = 0
+                for i in range(len(p) - 1):
+                    act1 = p[i]
+                    act2 = p[i+1]
+
+                    if act1.type == ActivityType.ACTIVITY and act2.type == ActivityType.ACTIVITY:
+                        dist = self._euclidean_distance(list(act1.play_attributes.dict().values()), list(act2.play_attributes.dict().values()))
+                    elif act1.type == ActivityType.FOOD and act2.type == ActivityType.FOOD:
+                        dist = self._calculate_food_attraction_score(act1.food_attributes, act2.food_attributes)
+                    else: # Mix of FOOD and ACTIVITY
+                        dist = 2.0 # Assign a higher, neutral distance for transitions between food and play
+                    current_dist += dist
+                
+                if current_dist < min_dist:
+                    min_dist = current_dist
+                    best_permutation = p
+            
+            if best_permutation:
+                best_schedules.append((best_permutation, min_dist))
+
+        # Sort all best schedules by their harmony score
+        best_schedules.sort(key=lambda x: x[1])
+
+        # Create final schedule models for the top N schedules
+        final_schedules = []
+        total_duration = (group.endtime - group.starttime).total_seconds()
         
-        result = await self.schedules_collection.insert_one(schedule_data)
-        new_schedule = await self.schedules_collection.find_one({"_id": result.inserted_id})
-        
-        return ScheduleModel(**new_schedule) if new_schedule else None
+        for activities, score in best_schedules[:top_n]:
+            num_activities = len(activities)
+            if num_activities == 0:
+                continue
+            
+            duration_per_activity = total_duration / num_activities
+            
+            scheduled_activities = []
+            current_time = group.starttime
+            for activity in activities:
+                end_time = current_time + datetime.timedelta(seconds=duration_per_activity)
+                
+                # Here, we use the model's ScheduledActivity which requires activity_id
+                scheduled_activities.append(ScheduledActivity(
+                    activity_id=str(activity.id),
+                    start_time=current_time,
+                    end_time=end_time
+                ))
+                current_time = end_time
+            
+            # Now, transform the data to match the response schema
+            from app.schemas.schedule import ScheduledActivity as ResponseScheduledActivity
+            response_activities = []
+            for i, sa in enumerate(scheduled_activities):
+                activity_obj = activities[i] # Get the full activity object
+                _cat = await self.categories_collection.find_one({"_id":ObjectId(activity_obj.category_id)})
+                response_activities.append(ResponseScheduledActivity(
+                    name=activity_obj.name,
+                    category=_cat["name"],
+                    start_time=sa.start_time,
+                    end_time=sa.end_time,
+                    location=activity_obj.location
+                ))
+
+            schedule_suggestion = ScheduleSuggestion(
+                group_id=group_id,
+                scheduled_activities=response_activities
+            )
+            final_schedules.append(schedule_suggestion)
+
+        if not final_schedules:
+            return None
+            
+        return ListScheduleResponse(schedules=final_schedules)
 
 group_service: "GroupService"
