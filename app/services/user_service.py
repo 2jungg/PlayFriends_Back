@@ -74,3 +74,22 @@ class UserService:
         groups_cursor = self.group_collection.find({"_id": {"$in": group_ids_as_obj}})
         groups = await groups_cursor.to_list(length=None)
         return [GroupModel(**g) for g in groups]
+
+    async def update_preferences(self, user_id: str, food_preferences: FoodPreferences, play_preferences: PlayPreferences) -> bool:
+        result = await self.collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "food_preferences": food_preferences.dict(),
+                "play_preferences": play_preferences.dict()
+            }}
+        )
+        
+        if result.modified_count > 0:
+            user = await self.get_user(user_id)
+            if user and user.group_ids:
+                from app.services.group_service import GroupService
+                group_service = GroupService(self.db.client)
+                for group_id in user.group_ids:
+                    await group_service.calculate_and_update_group_preferences(group_id)
+
+        return result.modified_count > 0

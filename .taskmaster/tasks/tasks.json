@@ -61,7 +61,7 @@
         "dependencies": [
           2
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": []
       },
       {
@@ -74,7 +74,7 @@
         "dependencies": [
           5
         ],
-        "status": "in-progress",
+        "status": "deferred",
         "subtasks": []
       },
       {
@@ -85,10 +85,9 @@
         "testStrategy": "1. Test preference aggregation with various group compositions\n2. Test schedule generation with different time constraints\n3. Test meal time prioritization\n4. Test variety constraints to prevent repetitive recommendations\n5. Test preference conflict resolution\n6. Verify schedule timing logic and activity durations",
         "priority": "high",
         "dependencies": [
-          5,
-          6
+          5
         ],
-        "status": "pending",
+        "status": "review",
         "subtasks": []
       },
       {
@@ -101,7 +100,7 @@
         "dependencies": [
           7
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": []
       },
       {
@@ -148,7 +147,7 @@
     ],
     "metadata": {
       "created": "2025-07-11T14:51:00.140Z",
-      "updated": "2025-07-13T07:28:15.635Z",
+      "updated": "2025-07-13T17:31:53.272Z",
       "description": "Tasks for master context"
     }
   }

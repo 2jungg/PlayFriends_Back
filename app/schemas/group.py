@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.models.group import GroupModel
 import datetime
+from .user import FoodPreferences, PlayPreferences
 
 class GroupCreate(BaseModel):
     groupname: str
@@ -16,7 +17,8 @@ class GroupUpdate(BaseModel):
     member_ids: Optional[List[str]] = None
 
 class GroupResponse(GroupModel):
-    pass
+    food_preferences: Optional[FoodPreferences] = Field(None, description="그룹의 통합 음식 선호도")
+    play_preferences: Optional[PlayPreferences] = Field(None, description="그룹의 통합 놀이 선호도")
 
 class GroupList(BaseModel):
     groups: List[GroupResponse]

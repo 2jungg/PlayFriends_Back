@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Any
+from bson import ObjectId
 from app.core.enums import (
     ActivityType,
     FoodIngredient,
@@ -36,7 +37,14 @@ class ActivityModel(BaseModel):
     # 활동 타입에 따라 둘 중 하나의 속성을 가짐
     food_attributes: Optional[FoodAttributes] = None
     play_attributes: Optional[PlayAttributes] = None
-
+    
+    @field_validator("id", mode="before")
+    @classmethod
+    def validate_id(cls, v: Any) -> str:
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
+    
     class Config:
         from_attributes = True
         populate_by_name = True
