@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.db.session import get_db
 from app.schemas.user import User, UserCreate, Token
-from app.schemas.group import GroupList
+from app.schemas.group import GroupList, GroupDetailResponse
 from app.models.user import UserModel
 from app.core.security import create_access_token, get_current_user
 from app.services.auth_service import authenticate_user
 from app.services.user_service import UserService
 from app.core.config import settings
 from datetime import timedelta
-from app.schemas.user import LoginRequest, FoodPreferences, PlayPreferences
+from app.schemas.user import LoginRequest, FoodPreferences, PlayPreferences, UserUpdate
 
 router = APIRouter()
 
@@ -68,6 +68,20 @@ async def create_user(
 async def read_users_me(current_user: UserModel = Depends(get_current_user)):
     return User(**current_user.model_dump(by_alias=True))
 
+@router.put("/users/me", response_model=User)
+async def update_user_me(
+    user_in: UserUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    service: UserService = Depends(get_user_service)
+):
+    updated_user = await service.update_user(str(current_user.id), user_in)
+    if not updated_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or could not be updated.",
+        )
+    return User(**updated_user.model_dump(by_alias=True))
+
 @router.get("/users/{user_id}/groups", response_model=GroupList)
 async def get_groups_by_user(
     user_id: str,
@@ -86,6 +100,29 @@ async def get_groups_by_user(
 
     groups = await service.get_user_groups(user)
     return {"groups": groups}
+
+@router.get("/users/{user_id}/groups/{group_id}", response_model=GroupDetailResponse)
+async def get_group_by_user(
+    user_id: str,
+    group_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    service: UserService = Depends(get_user_service)
+):
+    if current_user.userid != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access other user's groups",
+        )
+
+    user = await service.get_user_by_userid(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    group = await service.get_user_group_by_id(user, group_id)
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found or user is not a member")
+    
+    return group
 
 @router.put("/users/preferences", status_code=status.HTTP_200_OK)
 async def update_preferences(
