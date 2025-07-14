@@ -18,4 +18,4 @@ EXPOSE 8080
 
 # Run uvicorn when the container launches
 # The PORT environment variable is automatically set by Cloud Run.
-CMD ["/bin/sh", "-c", "python scripts/seed_db.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8080}"]

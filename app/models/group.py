@@ -3,6 +3,7 @@ from typing import List, Optional, Any
 from bson import ObjectId
 import datetime
 from app.schemas.user import FoodPreferences, PlayPreferences
+from app.schemas.schedule import ScheduledActivity
 
 class GroupModel(BaseModel):
     id: str = Field(alias="_id", default=None)
@@ -15,6 +16,9 @@ class GroupModel(BaseModel):
 
     food_preferences: Optional[FoodPreferences] = Field(None, description="그룹의 통합 음식 선호도")
     play_preferences: Optional[PlayPreferences] = Field(None, description="그룹의 통합 놀이 선호도")
+
+    schedule: Optional[List[ScheduledActivity]] = Field(None, description="확정된 스케줄")
+    distances_km: Optional[List[float]] = Field(None, description="스케줄 장소 간 이동 거리 목록 (km)")
 
     @field_validator("id", mode="before")
     @classmethod

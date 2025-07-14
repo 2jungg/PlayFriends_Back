@@ -34,3 +34,5 @@ node_modules/
 
 # OS specific
 .DS_Store
+
+FRONTEND_DEV_GUIDE.md
