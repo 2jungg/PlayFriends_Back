@@ -178,13 +178,13 @@ async def confirm_schedule(
     service: GroupService = Depends(get_group_service)
 ):
     """
-    제안된 스케줄을 그룹에 확정하고, 장소 간의 총 이동 거리를 계산하여 저장합니다.
+    제안된 스케줄을 그룹에 확정하고, 장소 간의 이동 거리를 계산하여 저장합니다.
     """
     group = await service.get_group(suggestion.group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    total_distance = 0.0
+    distances = []
     activities = suggestion.scheduled_activities
     
     if len(activities) > 1:
@@ -194,11 +194,12 @@ async def confirm_schedule(
             if loc1 and loc2 and loc1.coordinates and loc2.coordinates:
                 coords1 = (loc1.coordinates[1], loc1.coordinates[0]) # (lat, lon)
                 coords2 = (loc2.coordinates[1], loc2.coordinates[0]) # (lat, lon)
-                total_distance += geodesic(coords1, coords2).kilometers
+                distance = geodesic(coords1, coords2).kilometers
+                distances.append(distance)
 
     update_data = GroupUpdate(
         schedule=[activity.model_dump() for activity in activities],
-        total_distance_km=total_distance
+        distances_km=distances
     )
     
     updated_group = await service.update_group(suggestion.group_id, update_data)
