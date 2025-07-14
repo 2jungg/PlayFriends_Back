@@ -6,7 +6,7 @@ from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupList
 from app.models.user import UserModel
 from app.services.group_service import GroupService
 from app.schemas.category import CategoryListResponse
-from app.schemas.schedule import ScheduleResponse
+from app.schemas.schedule import ScheduleResponse, ListScheduleResponse
 from app.db.session import get_db
 from app.core.security import get_current_user
 
@@ -148,7 +148,7 @@ async def recommend_categories(
     categories = await service.recommend_categories(group_id)
     return {"categories": categories}
 
-@router.post("/groups/{group_id}/schedules", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/groups/{group_id}/schedules", response_model=ListScheduleResponse, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
     group_id: str,
     category_ids: List[str] = Body(..., embed=True),
@@ -164,7 +164,7 @@ async def create_schedule(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     if current_user.id not in group.member_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only group members can create a schedule")
-    schedule = await service.create_schedule_from_categories(group_id, category_ids)
-    if not schedule:
+    schedules = await service.create_schedules(group_id, category_ids)
+    if not schedules:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create schedule. Check group times or selected categories.")
-    return schedule
+    return schedules

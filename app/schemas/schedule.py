@@ -11,3 +11,6 @@ class ScheduleResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ListScheduleResponse(BaseModel):
+    schedules: List[ScheduleResponse]

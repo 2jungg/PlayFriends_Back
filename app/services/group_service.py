@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.models.group import GroupModel
 from app.models.category import CategoryModel
 from app.models.activity import ActivityModel
-from app.models.schedule import ScheduleModel, ScheduledActivity
+from app.models.schedule import ScheduleModel, ScheduledActivity, ListScheduleModel
 from app.schemas.user import FoodPreferences, PlayPreferences
 from app.schemas.group import GroupCreate, GroupUpdate
 from app.core.config import settings
@@ -195,27 +195,78 @@ class GroupService:
         if not group:
             return []
 
+        time_based_recommendations = []
+        
+        # 시간 기반 카테고리 추천
+        if group.starttime:
+            # 점심 시간 (11:30 ~ 14:00)
+            lunch_start = group.starttime.replace(hour=11, minute=30, second=0, microsecond=0)
+            lunch_end = group.starttime.replace(hour=14, minute=0, second=0, microsecond=0)
+            
+            # 저녁 시간 (17:30 ~ 20:00)
+            dinner_start = group.starttime.replace(hour=17, minute=30, second=0, microsecond=0)
+            dinner_end = group.starttime.replace(hour=20, minute=0, second=0, microsecond=0)
+
+            group_start_time = group.starttime
+            group_end_time = group.endtime if group.endtime else group.starttime
+
+            # 식사시간 겹치는지 확인
+            is_lunch_time = max(group_start_time, lunch_start) < min(group_end_time, lunch_end)
+            is_dinner_time = max(group_start_time, dinner_start) < min(group_end_time, dinner_end)
+
+            if is_lunch_time or is_dinner_time:
+                restaurant_category = await self.categories_collection.find_one({"name": "식당"})
+                if restaurant_category:
+                    time_based_recommendations.append(CategoryModel(**restaurant_category))
+
+            # 음주시간 (20:00 이후)
+            if group_start_time >= dinner_end:
+                bar_category = await self.categories_collection.find_one({"name": "주점"})
+                if bar_category:
+                    time_based_recommendations.append(CategoryModel(**bar_category))
+        
         group_prefs = group.play_preferences
         if not group_prefs:
             group_with_prefs = await self.calculate_and_update_group_preferences(group_id)
             if not group_with_prefs:
-                return []
+                return time_based_recommendations
             group_prefs = group_with_prefs.play_preferences
 
         group_vector = list(group_prefs.dict().values())
-        categories = []
-        cursor = self.categories_collection.find({"type": ActivityType.ACTIVITY.value, "play_attributes": {"$ne": None}})
+        
+        preference_based_categories = []
+        # parent_category_id가 있는 카테고리만 추천 (하위 카테고리)
+        query = {
+            "type": ActivityType.ACTIVITY.value, 
+            "play_attributes": {"$ne": None},
+            "parent_category_id": {"$ne": None}
+        }
+        cursor = self.categories_collection.find(query)
         async for category_doc in cursor:
             category = CategoryModel(**category_doc)
             if category.play_attributes:
                 category_vector = list(category.play_attributes.dict().values())
                 distance = self._euclidean_distance(group_vector, category_vector)
-                categories.append((category, distance))
+                preference_based_categories.append((category, distance))
         
-        categories.sort(key=lambda x: x[1])
+        preference_based_categories.sort(key=lambda x: x[1])
         
-        return [category for category, distance in categories[:top_n]]
+        # top_n 만큼 선호도 기반 카테고리 선택
+        top_preference_categories = [cat for cat, dist in preference_based_categories[:top_n]]
 
+        # 중복 제거 및 최종 목록 생성
+        final_recommendations = time_based_recommendations
+        existing_ids = {str(c.id) for c in final_recommendations}
+
+        for category in top_preference_categories:
+            if str(category.id) not in existing_ids:
+                final_recommendations.append(category)
+        
+        return final_recommendations
+
+    async def create_schedules(self, group_id: str, category_ids: List[str], top_n: int = 4) -> Optional[ListScheduleModel]:
+        pass
+        
     async def create_schedule_from_categories(self, group_id: str, category_ids: List[str]) -> Optional[ScheduleModel]:
         group = await self.get_group(group_id)
         if not group or not group.starttime:
