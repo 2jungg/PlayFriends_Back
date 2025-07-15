@@ -15,6 +15,7 @@ steps:
       - 'MONGO_URI=${_MONGO_URI}'
       - 'MONGO_DATABASE=${_MONGO_DATABASE}'
       - 'SECRET_KEY=${_SECRET_KEY}'
+      - 'GEMINI_API_KEY=${_GEMINI_API_KEY}'
 
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'

@@ -1,4 +1,5 @@
 import datetime
+import random
 import numpy as np
 from collections import defaultdict
 from typing import List, Optional
@@ -17,6 +18,7 @@ from app.schemas.group import GroupCreate, GroupUpdate, GroupDetailResponse, Gro
 from app.core.config import settings
 from app.core.enums import ActivityType
 from app.services.user_service import UserService
+from app.services.gemini_service import GeminiService
 
 class GroupService:
     def __init__(self, db_client: AsyncIOMotorClient):
@@ -27,6 +29,7 @@ class GroupService:
         self.activities_collection = self.db.activities
         self.schedules_collection = self.db.schedules
         self.user_service = UserService(db_client)
+        self.gemini_service = GeminiService()
 
     def _euclidean_distance(self, v1, v2):
         """두 벡터 간의 유클리드 거리를 계산합니다."""
@@ -85,6 +88,19 @@ class GroupService:
         
         # 유사도가 높을수록 거리는 가까워야 하므로 역수로 변환 (0으로 나누는 것 방지)
         return 1 / (1 + score)
+
+    def _jaccard_dissimilarity(self, schedule1: tuple, schedule2: tuple) -> float:
+        """두 스케줄 간의 Jaccard 유사도를 계산합니다."""
+        set1 = {str(act.id) for act in schedule1[0]}
+        set2 = {str(act.id) for act in schedule2[0]}
+        
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+        
+        if union == 0:
+            return 0.0
+        
+        return 1.0 - (intersection / union)
 
     async def _create_group_detail_response(self, group_doc: dict) -> GroupDetailResponse:
         group_model = GroupModel(**group_doc)
@@ -340,6 +356,14 @@ class GroupService:
         return CategoryListResponse(categories=final_recommendations)
 
     async def create_schedules(self, group_id: str, category_names: List[str], top_n: int = 4) -> Optional[ListScheduleResponse]:
+        # --- Parameters for recommendation diversity ---
+        POOL_SIZE = 10  # Number of activities to select for the final pool
+        CANDIDATE_POOL_SIZE = 30  # Number of candidates for sampling
+        DIVERSITY_WEIGHT = 0.5  # Weight for the diversity score
+        HARMONY_WEIGHT = 1.0  # Weight for the harmony score
+        NOVELTY_WEIGHT = 0.3 # Weight for novelty between schedules
+        # -----------------------------------------
+
         group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
         if not group_doc:
             return None
@@ -350,12 +374,9 @@ class GroupService:
         category_ids = []
         for cat_name in category_names:
             category = await self.categories_collection.find_one({"name": cat_name})
-
-        category_ids = []
-        for cat_name in category_names:
-            category = await self.categories_collection.find_one({"name": cat_name})
             if category:
                 category_ids.append(str(category["_id"]))
+
         group_play_prefs = group.play_preferences
         group_food_prefs = group.food_preferences
         if not group_play_prefs or not group_food_prefs:
@@ -393,24 +414,47 @@ class GroupService:
                     reverse=True
                 )
             
-            # Add the top 10 activities for this category to our list of pools
-            # This preserves duplicates if a category_id is provided multiple times
-            activity_pools.append(activities[:10])
+            # --- 1. Weighted Random Sampling for Activity Pool ---
+            candidate_activities = activities[:CANDIDATE_POOL_SIZE]
+            if not candidate_activities:
+                continue
+
+            weights = []
+            if category_model.type == ActivityType.ACTIVITY:
+                # Lower distance is better, so we invert it for weights. Add 1 to avoid division by zero.
+                distances = [self._euclidean_distance(group_play_vector, list(act.play_attributes.dict().values())) if act.play_attributes else float('inf') for act in candidate_activities]
+                max_dist = max(d for d in distances if d != float('inf')) + 1
+                weights = [max_dist - d for d in distances]
+            elif category_model.type == ActivityType.FOOD:
+                weights = [self._calculate_food_similarity_score(group_food_prefs, act.food_attributes) if act.food_attributes else 0 for act in candidate_activities]
+
+            # Normalize weights to be probabilities
+            total_weight = sum(weights)
+            if total_weight > 0:
+                probabilities = [w / total_weight for w in weights]
+                # Use np.random.choice for sampling without replacement
+                sampled_indices = np.random.choice(len(candidate_activities), size=min(POOL_SIZE, len(candidate_activities)), p=probabilities, replace=False)
+                activity_pools.append([candidate_activities[i] for i in sampled_indices])
+            else:
+                # If all weights are zero, fall back to top N
+                activity_pools.append(candidate_activities[:POOL_SIZE])
+            # ----------------------------------------------------
 
         if not activity_pools:
             return None
 
-        # Create all possible combinations of one activity from each category's pool
         all_combinations = list(product(*activity_pools))
 
         best_schedules = []
         for combo in all_combinations:
-            # For each combination, find the best permutation (sequence)
-            min_dist = float('inf')
+            min_final_score = float('inf')
             best_permutation = None
             
             for p in permutations(combo):
-                current_dist = 0
+                harmony_score = 0
+                diversity_score = 0
+                
+                # --- 2. Calculate Harmony and Diversity Scores ---
                 for i in range(len(p) - 1):
                     act1 = p[i]
                     act2 = p[i+1]
@@ -419,63 +463,123 @@ class GroupService:
                         dist = self._euclidean_distance(list(act1.play_attributes.dict().values()), list(act2.play_attributes.dict().values()))
                     elif act1.type == ActivityType.FOOD and act2.type == ActivityType.FOOD:
                         dist = self._calculate_food_attraction_score(act1.food_attributes, act2.food_attributes)
-                    else: # Mix of FOOD and ACTIVITY
-                        dist = 2.0 # Assign a higher, neutral distance for transitions between food and play
-                    current_dist += dist
+                    else:
+                        dist = 2.0
+                    harmony_score += dist
                 
-                if current_dist < min_dist:
-                    min_dist = current_dist
+                # Calculate diversity score for the permutation
+                if len(p) > 1:
+                    total_dist = 0
+                    pair_count = 0
+                    for i in range(len(p)):
+                        for j in range(i + 1, len(p)):
+                            act1 = p[i]
+                            act2 = p[j]
+                            if act1.type == ActivityType.ACTIVITY and act2.type == ActivityType.ACTIVITY:
+                                total_dist += self._euclidean_distance(list(act1.play_attributes.dict().values()), list(act2.play_attributes.dict().values()))
+                            elif act1.type == ActivityType.FOOD and act2.type == ActivityType.FOOD:
+                                total_dist += self._calculate_food_attraction_score(act1.food_attributes, act2.food_attributes)
+                            else:
+                                total_dist += 2.0
+                            pair_count += 1
+                    diversity_score = total_dist / pair_count if pair_count > 0 else 0
+
+                final_score = (HARMONY_WEIGHT * harmony_score) - (DIVERSITY_WEIGHT * diversity_score)
+                # -------------------------------------------------
+
+                if final_score < min_final_score:
+                    min_final_score = final_score
                     best_permutation = p
             
             if best_permutation:
-                best_schedules.append((best_permutation, min_dist))
+                best_schedules.append((best_permutation, min_final_score))
 
-        # Sort all best schedules by their harmony score
         best_schedules.sort(key=lambda x: x[1])
 
-        # Create final schedule models for the top N schedules
-        final_schedules = []
-        total_duration = (group.endtime - group.starttime).total_seconds()
-        
-        for activities, score in best_schedules[:top_n]:
-            num_activities = len(activities)
-            if num_activities == 0:
-                continue
-            
-            duration_per_activity = total_duration / num_activities
-            
-            scheduled_activities = []
-            current_time = group.starttime
-            for activity in activities:
-                end_time = current_time + datetime.timedelta(seconds=duration_per_activity)
-                
-                # Here, we use the model's ScheduledActivity which requires activity_id
-                scheduled_activities.append(ScheduledActivity(
-                    activity_id=str(activity.id),
-                    start_time=current_time,
-                    end_time=end_time
-                ))
-                current_time = end_time
-            
-            # Now, transform the data to match the response schema
-            from app.schemas.schedule import ScheduledActivity as ResponseScheduledActivity
-            response_activities = []
-            for i, sa in enumerate(scheduled_activities):
-                activity_obj = activities[i] # Get the full activity object
-                _cat = await self.categories_collection.find_one({"_id":ObjectId(activity_obj.category_id)})
-                response_activities.append(ResponseScheduledActivity(
-                    name=activity_obj.name,
-                    category=_cat["name"],
-                    start_time=sa.start_time,
-                    end_time=sa.end_time,
-                    location=activity_obj.location
-                ))
+        # --- 3. Maximal Marginal Relevance (MMR) for Final Selection ---
+        if not best_schedules:
+            return None
 
-            schedule_suggestion = ScheduleSuggestion(
-                group_id=group_id,
-                scheduled_activities=response_activities
-            )
-            final_schedules.append(schedule_suggestion)
+        selected_schedules = []
+        candidate_schedules = best_schedules.copy()
+
+        # Select the first schedule (the best one)
+        selected_schedules.append(candidate_schedules.pop(0))
+
+        while len(selected_schedules) < top_n and candidate_schedules:
+            next_schedule_idx = -1
+            max_mmr_score = -float('inf')
+
+            for i, candidate in enumerate(candidate_schedules):
+                original_score = candidate[1]
+                
+                # Calculate novelty against already selected schedules
+                novelty_score = sum(self._jaccard_dissimilarity(candidate, selected) for selected in selected_schedules) / len(selected_schedules)
+                
+                # MMR score: lower original score is better, so we use -original_score
+                mmr_score = -original_score + NOVELTY_WEIGHT * novelty_score
+                
+                if mmr_score > max_mmr_score:
+                    max_mmr_score = mmr_score
+                    next_schedule_idx = i
+            
+            if next_schedule_idx != -1:
+                selected_schedules.append(candidate_schedules.pop(next_schedule_idx))
+        # ----------------------------------------------------------------
+
+        final_schedules = []
+        
+        for activities, score in selected_schedules:
+            if not activities:
+                continue
+
+            # Call Gemini API to get a realistic schedule
+            gemini_schedule = await self.gemini_service.generate_realistic_schedule(list(activities), group.starttime, group.endtime)
+            
+            response_activities = []
+            
+            if gemini_schedule:
+                # Use the schedule from Gemini
+                activity_map = {str(act.id): act for act in activities}
+                for item in gemini_schedule:
+                    activity_obj = activity_map.get(item['activity_id'])
+                    if activity_obj:
+                        _cat = await self.categories_collection.find_one({"_id": ObjectId(activity_obj.category_id)})
+                        from app.schemas.schedule import ScheduledActivity as ResponseScheduledActivity
+                        response_activities.append(ResponseScheduledActivity(
+                            name=activity_obj.name,
+                            category=_cat["name"],
+                            start_time=item['start_time'],
+                            end_time=item['end_time'],
+                            location=activity_obj.location
+                        ))
+            else:
+                # Fallback to simple time division if Gemini fails
+                total_duration = (group.endtime - group.starttime).total_seconds()
+                num_activities = len(activities)
+                if num_activities == 0: continue
+                duration_per_activity = total_duration / num_activities
+                
+                current_time = group.starttime
+                for activity_obj in activities:
+                    end_time = current_time + datetime.timedelta(seconds=duration_per_activity)
+                    _cat = await self.categories_collection.find_one({"_id": ObjectId(activity_obj.category_id)})
+                    from app.schemas.schedule import ScheduledActivity as ResponseScheduledActivity
+                    response_activities.append(ResponseScheduledActivity(
+                        name=activity_obj.name,
+                        category=_cat["name"],
+                        start_time=current_time,
+                        end_time=end_time,
+                        location=activity_obj.location
+                    ))
+                    current_time = end_time
+
+            if response_activities:
+                schedule_suggestion = ScheduleSuggestion(
+                    group_id=group_id,
+                    scheduled_activities=response_activities
+                )
+                final_schedules.append(schedule_suggestion)
 
         if not final_schedules:
             return None

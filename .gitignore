@@ -36,3 +36,4 @@ node_modules/
 .DS_Store
 
 FRONTEND_DEV_GUIDE.md
+create_schedules_logic.md

@@ -10,3 +10,4 @@ pydantic-settings
 apscheduler
 numpy
 geopy
+google-generativeai
