@@ -13,7 +13,7 @@ from app.models.schedule import ScheduledActivity
 from app.schemas.schedule import ScheduleSuggestion, ListScheduleResponse
 from app.schemas.user import FoodPreferences, PlayPreferences
 from app.schemas.category import CategoryListResponse
-from app.schemas.group import GroupCreate, GroupUpdate
+from app.schemas.group import GroupCreate, GroupUpdate, GroupDetailResponse, GroupMember
 from app.core.config import settings
 from app.core.enums import ActivityType
 from app.services.user_service import UserService
@@ -86,7 +86,18 @@ class GroupService:
         # 유사도가 높을수록 거리는 가까워야 하므로 역수로 변환 (0으로 나누는 것 방지)
         return 1 / (1 + score)
 
-    async def create_group(self, group_data: GroupCreate, owner_id: str) -> GroupModel:
+    async def _create_group_detail_response(self, group_doc: dict) -> GroupDetailResponse:
+        group_model = GroupModel(**group_doc)
+        members = []
+        for member_id in group_model.member_ids:
+            user = await self.user_service.get_user(member_id)
+            if user:
+                members.append(GroupMember(id=str(user.id), name=user.username))
+        
+        group_detail = GroupDetailResponse(**group_model.dict(), members=members)
+        return group_detail
+
+    async def create_group(self, group_data: GroupCreate, owner_id: str) -> GroupDetailResponse:
         group_dict = group_data.dict()
         group_dict["owner_id"] = owner_id
         group_dict["member_ids"] = [owner_id]
@@ -102,23 +113,23 @@ class GroupService:
 
         await self.user_service.add_group_to_user(owner_id, str(new_group_id))
 
-        new_group = await self.collection.find_one({"_id": new_group_id})
-        return GroupModel(**new_group)
+        new_group_doc = await self.collection.find_one({"_id": new_group_id})
+        return await self._create_group_detail_response(new_group_doc)
 
-    async def get_group(self, group_id: str) -> Optional[GroupModel]:
-        group = await self.collection.find_one({"_id": ObjectId(group_id)})
-        if group:
-            return GroupModel(**group)
+    async def get_group(self, group_id: str) -> Optional[GroupDetailResponse]:
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if group_doc:
+            return await self._create_group_detail_response(group_doc)
         return None
 
-    async def get_all_groups(self) -> List[GroupModel]:
+    async def get_all_groups(self) -> List[GroupDetailResponse]:
         groups = []
         cursor = self.collection.find()
-        async for group in cursor:
-            groups.append(GroupModel(**group))
+        async for group_doc in cursor:
+            groups.append(await self._create_group_detail_response(group_doc))
         return groups
 
-    async def update_group(self, group_id: str, group_data: GroupUpdate) -> Optional[GroupModel]:
+    async def update_group(self, group_id: str, group_data: GroupUpdate) -> Optional[GroupDetailResponse]:
         update_data = {k: v for k, v in group_data.dict().items() if v is not None}
         
         if not update_data:
@@ -128,13 +139,13 @@ class GroupService:
             {"_id": ObjectId(group_id)},
             {"$set": update_data}
         )
-        updated_group = await self.get_group(group_id)
-        return updated_group
+        return await self.get_group(group_id)
 
     async def delete_group(self, group_id: str) -> bool:
-        group = await self.get_group(group_id)
-        if not group:
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
             return False
+        group = GroupModel(**group_doc)
 
         # Remove group_id from all members' group_ids list
         await self.user_service.remove_group_from_all_users(group.member_ids, group_id)
@@ -143,8 +154,11 @@ class GroupService:
         return result.deleted_count > 0
 
     async def add_member(self, group_id: str, user_id: str) -> bool:
-        group = await self.get_group(group_id)
-        if not group or user_id in group.member_ids:
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
+            return False
+        group = GroupModel(**group_doc)
+        if user_id in group.member_ids:
             return False
 
         user = await self.user_service.get_user(user_id)
@@ -167,9 +181,12 @@ class GroupService:
         return group_update_result.modified_count > 0
 
     async def remove_member(self, group_id: str, user_id: str) -> bool:
-        group = await self.get_group(group_id)
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
+            return False
+        group = GroupModel(**group_doc)
         # Cannot remove the owner or a user not in the group
-        if not group or user_id not in group.member_ids or user_id == group.owner_id:
+        if user_id not in group.member_ids or user_id == group.owner_id:
             return False
 
         # Remove user from group's member_ids
@@ -201,10 +218,13 @@ class GroupService:
         )
         print(f"Deactivated {result.modified_count} expired groups.")
 
-    async def calculate_and_update_group_preferences(self, group_id: str) -> Optional[GroupModel]:
-        group = await self.get_group(group_id)
-        if not group or not group.member_ids:
+    async def calculate_and_update_group_preferences(self, group_id: str) -> Optional[GroupDetailResponse]:
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
             return None
+        group = GroupModel(**group_doc)
+        if not group.member_ids:
+            return await self._create_group_detail_response(group_doc)
 
         num_members = len(group.member_ids)
         
@@ -245,9 +265,10 @@ class GroupService:
         return updated_group
 
     async def recommend_categories(self, group_id: str, top_n: int = 5) -> CategoryListResponse:
-        group = await self.get_group(group_id)
-        if not group:
-            return []
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
+            return CategoryListResponse(categories=[])
+        group = GroupModel(**group_doc)
 
         time_based_recommendations = []
         
@@ -283,7 +304,7 @@ class GroupService:
         if not group_prefs:
             group_with_prefs = await self.calculate_and_update_group_preferences(group_id)
             if not group_with_prefs:
-                return time_based_recommendations
+                return CategoryListResponse(categories=[str(c.name) for c in time_based_recommendations])
             group_prefs = group_with_prefs.play_preferences
 
         group_vector = list(group_prefs.dict().values())
@@ -316,12 +337,19 @@ class GroupService:
             if str(category.id) not in existing_ids:
                 final_recommendations.append(str(category.name))
         
-        return {"categories": final_recommendations}
+        return CategoryListResponse(categories=final_recommendations)
 
     async def create_schedules(self, group_id: str, category_names: List[str], top_n: int = 4) -> Optional[ListScheduleResponse]:
-        group = await self.get_group(group_id)
-        if not group or not group.starttime or not group.endtime:
+        group_doc = await self.collection.find_one({"_id": ObjectId(group_id)})
+        if not group_doc:
             return None
+        group = GroupModel(**group_doc)
+        if not group.starttime or not group.endtime:
+            return None
+
+        category_ids = []
+        for cat_name in category_names:
+            category = await self.categories_collection.find_one({"name": cat_name})
 
         category_ids = []
         for cat_name in category_names:
