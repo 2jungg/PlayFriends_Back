@@ -88,17 +88,16 @@ async def get_groups_by_user(
     current_user: UserModel = Depends(get_current_user),
     service: UserService = Depends(get_user_service)
 ):
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if current_user.userid != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access other user's groups",
         )
 
-    user = await service.get_user_by_userid(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    groups = await service.get_user_groups(user)
+    groups = await service.get_user_groups(current_user)
     return {"groups": groups}
 
 @router.get("/users/{user_id}/groups/{group_id}", response_model=GroupDetailResponse)
@@ -108,17 +107,16 @@ async def get_group_by_user(
     current_user: UserModel = Depends(get_current_user),
     service: UserService = Depends(get_user_service)
 ):
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if current_user.userid != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access other user's groups",
         )
 
-    user = await service.get_user_by_userid(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    group = await service.get_user_group_by_id(user, group_id)
+    group = await service.get_user_group_by_id(current_user, group_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found or user is not a member")
     

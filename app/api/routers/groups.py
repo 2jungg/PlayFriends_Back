@@ -3,7 +3,7 @@ from typing import List
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from geopy.distance import geodesic
 
-from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupList, Message
+from app.schemas.group import GroupCreate, GroupUpdate, GroupList, GroupDetailResponse, Message
 from app.schemas.schedule import ScheduleSuggestion
 from app.models.user import UserModel
 from app.services.group_service import GroupService
@@ -17,7 +17,7 @@ router = APIRouter()
 def get_group_service(db: AsyncIOMotorClient = Depends(get_db)) -> GroupService:
     return GroupService(db)
 
-@router.post("/groups/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/groups/", response_model=GroupDetailResponse, status_code=status.HTTP_201_CREATED)
 async def create_group(
     group_data: GroupCreate,
     service: GroupService = Depends(get_group_service),
@@ -39,7 +39,7 @@ async def get_all_groups(
     groups = await service.get_all_groups()
     return {"groups": groups}
 
-@router.get("/groups/{group_id}", response_model=GroupResponse)
+@router.get("/groups/{group_id}", response_model=GroupDetailResponse)
 async def get_group(
     group_id: str,
     service: GroupService = Depends(get_group_service)
@@ -52,7 +52,7 @@ async def get_group(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
 
-@router.put("/groups/{group_id}", response_model=GroupResponse)
+@router.put("/groups/{group_id}", response_model=GroupDetailResponse)
 async def update_group(
     group_id: str,
     group_data: GroupUpdate,
@@ -164,14 +164,14 @@ async def create_schedule(
     group = await service.get_group(group_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
-    if current_user.id not in group.member_ids:
+    if str(current_user.id) not in [member.id for member in group.members]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only group members can create a schedule")
     schedules = await service.create_schedules(group_id, categories)
     if not schedules:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create schedule. Check group times or selected categories.")
     return schedules
 
-@router.post("/groups/schedule", response_model=GroupResponse, summary="그룹 스케줄 확정 및 저장")
+@router.post("/groups/schedule", response_model=GroupDetailResponse, summary="그룹 스케줄 확정 및 저장")
 async def confirm_schedule(
     suggestion: ScheduleSuggestion,
     db: AsyncIOMotorDatabase = Depends(get_db),
