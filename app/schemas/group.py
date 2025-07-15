@@ -15,6 +15,8 @@ class GroupUpdate(BaseModel):
     starttime: Optional[datetime.datetime] = None
     endtime: Optional[datetime.datetime] = None
     is_active: Optional[bool] = None
+    food_preferences: Optional[FoodPreferences] = None
+    play_preferences: Optional[PlayPreferences] = None
     member_ids: Optional[List[str]] = None
     schedule: Optional[List[ScheduledActivity]] = None
     distances_km: Optional[List[float]] = None
