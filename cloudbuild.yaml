@@ -32,7 +32,7 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'MONGO_URI=${_MONGO_URI},MONGO_DATABASE=${_MONGO_DATABASE},SECRET_KEY=${_SECRET_KEY}'
+      - 'MONGO_URI=${_MONGO_URI},MONGO_DATABASE=${_MONGO_DATABASE},SECRET_KEY=${_SECRET_KEY},GEMINI_API_KEY=${_GEMINI_API_KEY}'
 
 images:
   - 'gcr.io/$PROJECT_ID/playfriends-backend:$COMMIT_SHA'
