@@ -41,6 +41,7 @@ substitutions:
   _MONGO_URI: 'your-mongodb-uri'
   _MONGO_DATABASE: 'your-db-name'
   _SECRET_KEY: 'your-secret-key'
+  _GEMINI_API_KEY:  'your-gemini-key'
 
 options:
   logging: CLOUD_LOGGING_ONLY
